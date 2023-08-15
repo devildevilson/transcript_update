@@ -1,5 +1,6 @@
 require("dotenv").config();
 const mysql = require("mysql2/promise");
+const { performance } = require("perf_hooks");
 
 const connection_config = {
   host     : process.env.DATABASE_HOST,
@@ -10,6 +11,14 @@ const connection_config = {
   connectionLimit: 10,
   connectTimeout: 100000,
 };
+
+async function perf(msg, func, ...args) {
+  const start_time = performance.now();
+  const ret = await func(...args);
+  const end_time = performance.now();
+  console.info(`${msg} took ${end_time - start_time} milliseconds`);
+  return ret;
+}
 
 function alpha_mark(value) {
   let alpha = "";
@@ -89,8 +98,8 @@ async function update_trascript(con, student_id, query_id, total_mark, alpha_mar
         AND queryID   = ${query_id};
   `;
 
-  //await con.query(update_str);
-  console.log(update_str);
+  await con.query(update_str);
+  //console.log(update_str);
 }
 
 (async () => {
@@ -99,15 +108,19 @@ async function update_trascript(con, student_id, query_id, total_mark, alpha_mar
   const year = get_year();
   const totalmarks = await get_totalmarks_by_year(con, year);
 
-  console.log(year);
-  console.log(totalmarks.length);
-  for (const mark_data of totalmarks) {
-    const alpha = alpha_mark(mark_data.mark);
-    const numeral = numeral_mark(mark_data.mark);
-    const traditional = traditional_mark(mark_data.mark);
+  console.log(`Updating ${totalmarks.length} transcript marks for ${year} year`);
+  await perf(`Updation`, async function() {
+    let promises = [];
+    for (const mark_data of totalmarks) {
+      const alpha = alpha_mark(mark_data.mark);
+      const numeral = numeral_mark(mark_data.mark);
+      const traditional = traditional_mark(mark_data.mark);
 
-    //await update_trascript(con, mark_data.student_id, mark_data.query_id, mark_data.mark, alpha, numeral, traditional);
-  }
+      promises.push( update_trascript(con, mark_data.student_id, mark_data.query_id, mark_data.mark, alpha, numeral, traditional) );
+    }
+
+    await Promise.all(promises);
+  });
 
   await con.end();
 })();
